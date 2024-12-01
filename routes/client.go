@@ -2,12 +2,14 @@ package routes
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
-	"log"
 	"net/http"
 	"sync"
 	"time"
 )
+
+var log = logrus.New()
 
 type Status struct {
 	ClientID string `json:"client_id" binding:"required"`
@@ -27,8 +29,8 @@ func (ClientState) TableName() string {
 }
 
 var (
-	queue   = make(chan Status, 1000) // Buffered channel for the queue
-	dbMutex sync.Mutex                // Mutex for database operations
+	queue   = make(chan Status, 10000000) // Buffered channel for the queue
+	dbMutex sync.Mutex                    // Mutex for database operations
 )
 
 // BatchInsert inserts a batch of statuses into the database
@@ -54,7 +56,7 @@ func BatchInsert(db *gorm.DB, statuses []Status) {
 
 // ProcessQueue processes statuses from the queue in batches
 func ProcessQueue(db *gorm.DB) {
-	batchSize := 100
+	batchSize := 500
 	ticker := time.NewTicker(500 * time.Millisecond) // Periodic batch processing
 
 	for {
@@ -84,17 +86,20 @@ func ProcessQueue(db *gorm.DB) {
 }
 
 // ReceiveStatus handles incoming status requests
-func ReceiveStatus(c *gin.Context) {
+func ReceiveStatus(context *gin.Context) {
 	var status Status
-	if err := c.ShouldBindJSON(&status); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := context.ShouldBindJSON(&status); err != nil {
+		context.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	select {
 	case queue <- status:
-		c.JSON(http.StatusOK, gin.H{"message": "Status received"})
+		log.Info(
+			"Received status for client " + status.ClientID + " with status " + status.Status)
+		context.JSON(http.StatusOK, gin.H{"message": "Status received"})
 	default:
-		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Queue is full"})
+		log.Warn("Queue is full, dropping status")
+		context.JSON(http.StatusServiceUnavailable, gin.H{"message": "Queue is full"})
 	}
 }
