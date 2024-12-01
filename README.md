@@ -37,3 +37,6 @@ create table ss_client_state_log
 ```
 可以根据自己的实际情况进行修改
 
+#### 结果
+![img_2.png](img_2.png)
+
